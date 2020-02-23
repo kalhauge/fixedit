@@ -1,0 +1,18 @@
+name: fixedit
+description: |
+  Fix combinator
+version: 0.0.1
+author: Christian Gram Kalhauge
+maintainer: Christian Gram Kalhauge <christian@kalhauge.dk>
+synopsis: A fixed point conversion
+license: BSD3
+license-file: LICENSE
+category: Data
+github: kalhauge/fixedit
+
+dependencies:
+  - base >= 4.10 && < 4.13
+
+library:
+  source-dirs: src
+
