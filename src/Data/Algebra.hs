@@ -12,7 +12,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Data.Fixed
+module Data.Algebra
   where
 
 -- base
