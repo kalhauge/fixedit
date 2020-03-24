@@ -22,12 +22,20 @@ import Data.Bifoldable
 import Data.Bifunctor
 import Data.Bitraversable
 
+-- | An algebra is a functor which we can embed into a value.
+-- For example, we can embed N + N into N, by adding the values.
 type Algebra   f a = f a -> a
+  
+-- | A Coalgebra is an reverse Algebra. It means that we can 
+-- project a value into a functor.
+-- For example we can project N into primefactors of N.
 type Coalgebra f a = a -> f a
 
+-- | Some data-structures have default algebras.
 class Functor f => Embedable f a | a -> f where
   embed :: Algebra f a
 
+-- | Some data-structures have default coalgebras.
 class Functor f => Projectable f a | a -> f where
   project :: Coalgebra f a 
 
@@ -82,6 +90,7 @@ mapFx ::
 mapFx f = mapF (first f)
 {-# INLINE mapFx #-}
 
+-- | Given that the  
 foldF :: 
   (Bifoldable p, Monoid x, Catamorphic (p x) a) 
   => a -> x
@@ -116,58 +125,6 @@ traverseFx ::
 traverseFx f = cata (fmap embed . bitraverse f id) 
 {-# INLINE traverseFx #-}
 
--- * Common F-Algebras
-
--- | An `SemigroupF` functor is a simple fold fixpoint.
-data SemigroupF b a 
-  = One b
-  | More b a
-  deriving (Functor, Foldable, Traversable, Generic)
-
-instance Bifunctor SemigroupF where
-  bimap f g = \case
-    More a b -> More (f a) (g b)
-    One b -> One (f b)
-
-instance Bifoldable SemigroupF where
-  bifoldMap f g = \case
-    More a b -> (f a) <> (g b)
-    One a -> (f a)
-
-instance Bitraversable SemigroupF where
-
--- | An `MonoidF` functor is a simple fold fixpoint.
-data MonoidF b a 
-  = None
-  | Many b a
-  deriving (Functor, Foldable, Traversable, Generic)
-
-instance Bifunctor MonoidF where
-  bimap f g = \case
-    Many a b -> Many (f a) (g b)
-    None -> None
-
-instance Bifoldable MonoidF where
-  bifoldMap f g = \case
-    Many a b -> (f a) <> (g b)
-    None -> mempty
-
-instance Bitraversable MonoidF where
-
-instance Projectable (MonoidF b) [b] where
-  project = \case
-    [] -> None
-    a:rest -> Many a rest
-
-instance Embedable (MonoidF b) [b] where
-  embed = \case
-    None -> []
-    Many a rest -> a:rest
-
-instance Catamorphic (MonoidF b) [b] 
-instance Anamorphic (MonoidF b) [b] 
-instance Fixed (MonoidF b) [b] 
-
 -- | The standard definition of a fix data type.
 data Fix f = Fix { unFix :: f (Fix f) }
   deriving (Generic)
@@ -181,5 +138,17 @@ instance Functor f => Embedable f (Fix f) where embed = Fix
 instance Functor f => Catamorphic f (Fix f) 
 instance Functor f => Anamorphic f (Fix f) 
 instance Functor f => Fixed f (Fix f) 
+
+
+
+
+
+
+
+
+
+
+
+
 
 
