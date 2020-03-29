@@ -12,15 +12,22 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-| 
+Module      : Data.Algebra
+Copyright   : (c) Christian Gram Kalhauge, 2020
+License     : BSD-3
+Maintainer  : Christian Gram Kalhauge <christian@kalhauge.dk>
+
+-}
 module Data.Algebra
   where
 
 -- base
-import GHC.Generics (Generic)
-import qualified Data.List as L
 import Data.Bifoldable
 import Data.Bifunctor
 import Data.Bitraversable
+import GHC.Generics (Generic)
+import qualified Data.List as L
 
 -- | An algebra is a functor which we can embed into a value.
 -- For example, we can embed N + N into N, by adding the values.
