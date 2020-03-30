@@ -1,5 +1,7 @@
 {-# OPTIONS -fno-warn-orphans #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -45,11 +47,11 @@ instance Projectable (SemigroupF b) (NE.NonEmpty b) where
     maybe (One a) (More a) x
   {-# INLINE project #-}
 
-instance Embedable (SemigroupF b) (NE.NonEmpty b) where
-  embed = \case
+instance Embedable1 SemigroupF NE.NonEmpty where
+  embed1 = \case
     One a -> a NE.:| []
     More a rest -> a NE.<| rest
-  {-# INLINE embed #-}
+  {-# INLINE embed1 #-}
 
 
 -- | A `MonoidF` functor is a simple fold fixpoint.
@@ -70,15 +72,24 @@ instance Bifoldable MonoidF where
 
 instance Bitraversable MonoidF where
 
-instance Projectable (MonoidF b) [b] where
-  project = \case
+instance Projectable1 MonoidF [] where
+  project1 = \case
     [] -> None
     a:rest -> Many a rest
+  {-# INLINE project1 #-}
 
-instance Embedable (MonoidF b) [b] where
-  embed = \case
+instance Projectable (MonoidF b) [b] where 
+  project = project1
+  {-# INLINE project #-}
+
+instance Embedable1 MonoidF [] where
+  embed1 = \case
     None -> []
     Many a rest -> a:rest
+  {-# INLINE embed1 #-}
+
+instance Embedable (MonoidF b) [b] where 
+  embed = embed1
   {-# INLINE embed #-}
 
 instance Catamorphic (MonoidF b) [b] 
@@ -98,8 +109,8 @@ instance Embedable (MonoidF b) a => Embedable (SemigroupF b) (IsNonEmpty a) wher
       IsNonEmpty $ embed (Many a r)
 
 -- | Convert any ListLike into MonoidF
-intoNonEmpty :: (Catamorphic (SemigroupF x) a, Embedable (MonoidF x) b) => a -> b
-intoNonEmpty = fromNonEmpty . hylo
+intoNonEmpty :: forall x a b. (Catamorphic (SemigroupF x) a, Embedable (MonoidF x) b) => a -> b
+intoNonEmpty = fromNonEmpty . hylo @(SemigroupF x) @a @(IsNonEmpty b) 
 
 -- | A Partition of a structure, In the split case every element on the 
 -- right side is above the element in the middle.

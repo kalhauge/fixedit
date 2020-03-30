@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,7 +21,35 @@ Maintainer  : Christian Gram Kalhauge <christian@kalhauge.dk>
 
 -}
 module Data.Algebra
-  where
+  ( -- * Algebras
+    Algebra
+  , Coalgebra
+
+  -- ** Default Algebras
+
+  , Embedable (..)
+  , Projectable (..)
+  , Catamorphic (..)
+  , Anamorphic (..)
+  , Fixed 
+  
+  -- ** Lifted Default Algebras
+  -- Many data structures is functors over the same items as their default algebras. 
+  -- These structures illustrate this. They are the same as the structures 
+  -- in the default algebras.
+  -- For every X1, it should be the case that X is also true.
+  , Embedable1 (..)
+  , Projectable1 (..)
+  , Catamorphic1 (..)
+  , Anamorphic1 (..)
+
+  -- ** Algebraic Utilities
+  
+  , hylo
+
+  -- * Common Algebras
+
+  ) where
 
 -- base
 import Data.Bifoldable
@@ -42,27 +71,48 @@ type Coalgebra f a = a -> f a
 class Functor f => Embedable f a | a -> f where
   embed :: Algebra f a
 
+class Bifunctor f => Embedable1 f a | a -> f where
+  embed1 :: forall x. Algebra (f x) (a x)
+
 -- | Some data-structures have default coalgebras.
 class Functor f => Projectable f a | a -> f where
   project :: Coalgebra f a 
+
+class Bifunctor f => Projectable1 f a | a -> f where
+  project1 :: forall x. Coalgebra (f x) (a x)
 
 {- | A Catamorphism is essentially a fold, but this 
 fold is over any F-algebra f.
 -}
 class Catamorphic f a | a -> f where
   -- | A catamorphism is a fold
-  cata :: (f x -> x) -> a -> x
+  cata :: Algebra f x -> a -> x
   default cata :: Projectable f a => (f x -> x) -> a -> x
   cata fx = fx . fmap (cata fx) . project
   {-# INLINE cata #-}
 
--- | An Anamorphism is a unfold, but this allows any F-algebra f.
+class Catamorphic1 f a | a -> f where
+  -- | A catamorphism is a fold
+  cata1 :: Algebra (f y) x -> a y -> x
+  default cata1 :: Projectable1 f a => (f y x -> x) -> a y -> x
+  cata1 fx = fx . second (cata1 fx) . project1
+  {-# INLINE cata1 #-}
+
+-- | An Anamorphism is an unfold, but this allows any F-algebra f.
 class Embedable f a => Anamorphic f a | a -> f where
-  -- | A anamorphism is a unfold.
-  ana  :: (x -> f x) -> x -> a
+  -- | A anamorphism is an unfold.
+  ana  :: Coalgebra f x -> x -> a
   default ana :: Embedable f a => (x -> f x) -> x -> a
   ana fx = embed . fmap (ana fx) . fx 
   {-# INLINE ana #-}
+
+-- | An Anamorphism is a unfold, but this allows any F-algebra f.
+class Embedable1 f a => Anamorphic1 f a | a -> f where
+  -- | A anamorphism is a unfold.
+  ana1  :: Coalgebra (f y) x -> x -> a y
+  default ana1 :: Embedable1 f a => (x -> f y x) -> x -> a y
+  ana1 fx = embed1 . second (ana1 fx) . fx 
+  {-# INLINE ana1 #-}
 
 -- {- | We define the Fixed of an element as something that can 
 -- has both a catamorphism and anamorphism into this a functor.
@@ -72,11 +122,19 @@ class Embedable f a => Anamorphic f a | a -> f where
 -- -}
 class (Anamorphic f a, Catamorphic f a) => Fixed f a | a -> f where
 
+class (Anamorphic1 f a, Catamorphic1 f a) => Fixed1 f a | a -> f where
+
 -- | If two itemes can be fixed to the same functor, then we can convert
 -- freely between them.
 hylo :: (Catamorphic f a, Embedable f b) => a -> b
 hylo = cata embed
 {-# INLINE hylo #-}
+
+-- | If two itemes can be fixed to the same functor, then we can convert
+-- freely between them.
+hylo1 :: (Catamorphic1 f a, Embedable1 f b) => a x -> b x
+hylo1 = cata1 embed1
+{-# INLINE hylo1 #-}
 
 -- * Operations 
 -- We can derive a lot of operations from the catamorphism and anamorphism.
@@ -146,9 +204,32 @@ instance Functor f => Catamorphic f (Fix f)
 instance Functor f => Anamorphic f (Fix f) 
 instance Functor f => Fixed f (Fix f) 
 
+data Fix1 f x = Fix1 { unFix1 :: f x (Fix1 f x) }
+  deriving (Generic)
+
+instance Bifunctor f => Projectable1 f (Fix1 f) where project1 = unFix1
+instance Bifunctor f => Embedable1 f (Fix1 f) where embed1 = Fix1
+instance Bifunctor f => Catamorphic1 f (Fix1 f) 
+instance Bifunctor f => Anamorphic1 f (Fix1 f) 
+instance Bifunctor f => Fixed1 f (Fix1 f) 
 
 
 
+-- | Turn a regular data structure into a fix structure.
+-- This is mostly used to do derive via.
+newtype AsFix a x = AsFix { fixedItem :: a x }
+
+instance (Embedable1 p a, Catamorphic1 p a) => Functor (AsFix a) where
+  fmap f = AsFix . cata1 (embed1 . first f) . fixedItem
+  {-# INLINE fmap #-}
+
+instance (Bifoldable p, Catamorphic1 p a) => Foldable (AsFix a) where
+  foldMap f = cata1 (bifoldMap f id) . fixedItem
+  {-# INLINE foldMap #-}
+
+instance (Bitraversable p, Embedable1 p a, Catamorphic1 p a) => Traversable (AsFix a) where
+  traverse f = fmap AsFix . cata1 (fmap embed1 . bitraverse f id) . fixedItem
+  {-# INLINE traverse #-}
 
 
 
