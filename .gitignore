@@ -3,4 +3,5 @@
 dist-newstyle
 dist
 .DS_Store
+fixedit.cabal
 result

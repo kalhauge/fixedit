@@ -3,11 +3,7 @@
 }:
 let 
   inherit (import (builtins.fetchTarball "https://github.com/hercules-ci/gitignore/archive/7415c4f.tar.gz") { }) gitignoreSource; 
-  hpkgs = 
-  (if compiler == "default" 
-  then pkgs.haskellPackages 
-  else pkgs.haskell.packages."${compiler}"
-  );
+  hpkgs = if compiler == "default" then pkgs.haskellPackages else pkgs.haskell.packages."${compiler}";
 in 
 hpkgs.developPackage { 
   root = gitignoreSource ./.;

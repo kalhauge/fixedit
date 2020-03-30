@@ -1,39 +1,69 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 {-| 
 Module      : Data.Algebra
 Copyright   : (c) Christian Gram Kalhauge, 2020
 License     : BSD-3
 Maintainer  : Christian Gram Kalhauge <christian@kalhauge.dk>
 
+The point of this package is to provide a simple, one module, implementation 
+of some recursion patterns in haskell.
 -}
 module Data.Algebra
   ( -- * Algebras
+    -- | The whole package is pretty much orbiting around these two types, 
+    -- so they might be nice to go into a little more detail with.
     Algebra
   , Coalgebra
 
-  -- ** Default Algebras
-
+    -- ** Default Algebras
+    -- | The special power of this library comes when we define default
+    -- algebras and co-algebras for some structures.
   , Embedable (..)
   , Projectable (..)
   , Catamorphic (..)
   , Anamorphic (..)
   , Fixed 
   
-  -- ** Lifted Default Algebras
+  -- ** Algebraic Utilities
+  
+  , hylo
+
+  , mapF
+  , mapFx
+  , foldMapF
+  , foldMapFx
+  , traverseF
+  , traverseFx
+
+  -- * The Free Algebra
+  
+  , Fix (..)
+
+  , Fix1 (..)
+
+
+  -- * Common Algebras
+  , SemigroupF (..)
+  , MonoidF (..)
+  
+  -- * Lifted Default Algebras
   -- Many data structures is functors over the same items as their default algebras. 
   -- These structures illustrate this. They are the same as the structures 
   -- in the default algebras.
@@ -43,17 +73,16 @@ module Data.Algebra
   , Catamorphic1 (..)
   , Anamorphic1 (..)
 
-  -- ** Algebraic Utilities
-  
-  , hylo
-
-  -- * Common Algebras
 
   ) where
 
 -- base
 import Data.Bifoldable
 import Data.Bifunctor
+import Data.Functor.Classes
+import Numeric.Natural
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Bitraversable
 import GHC.Generics (Generic)
 import qualified Data.List as L
@@ -114,12 +143,12 @@ class Embedable1 f a => Anamorphic1 f a | a -> f where
   ana1 fx = embed1 . second (ana1 fx) . fx 
   {-# INLINE ana1 #-}
 
--- {- | We define the Fixed of an element as something that can 
--- has both a catamorphism and anamorphism into this a functor.
--- 
--- The goal here is to allow other monomorphic data-structures to be 
--- de constructed into more interesting shapes.
--- -}
+{- | We define the Fixed of an element as something that can 
+has both a catamorphism and anamorphism into this a functor.
+
+The goal here is to allow other monomorphic data-structures to be 
+de constructed into more interesting shapes.
+-}
 class (Anamorphic f a, Catamorphic f a) => Fixed f a | a -> f where
 
 class (Anamorphic1 f a, Catamorphic1 f a) => Fixed1 f a | a -> f where
@@ -213,7 +242,25 @@ instance Bifunctor f => Catamorphic1 f (Fix1 f)
 instance Bifunctor f => Anamorphic1 f (Fix1 f) 
 instance Bifunctor f => Fixed1 f (Fix1 f) 
 
+instance Eq1 (f x) => Eq (Fix1 f x) where
+  (Fix1 a) == (Fix1 b) = 
+    liftEq (==) a b
 
+instance Show1 (f x) => Show (Fix1 f x) where
+  showsPrec n (Fix1 i) = showParen (n >= 9) $ 
+    showString "Fix1 " .  liftShowsPrec showsPrec showList 9 i
+
+instance Eq2 f => Eq1 (Fix1 f) where
+  liftEq eqA (Fix1 a) (Fix1 b) = 
+    liftEq2 eqA (liftEq eqA) a b
+
+instance Show2 f => Show1 (Fix1 f) where
+  liftShowsPrec showA showAs n (Fix1 i) = showParen (n >= 9) $
+    showString "Fix1 " . 
+      liftShowsPrec2 showA showAs 
+        (liftShowsPrec showA showAs) 
+        (liftShowList showA showAs)
+        9 i
 
 -- | Turn a regular data structure into a fix structure.
 -- This is mostly used to do derive via.
@@ -237,6 +284,131 @@ instance (Bitraversable p, Embedable1 p a, Catamorphic1 p a) => Traversable (AsF
 
 
 
+
+
+
+
+
+--- Instances
+
+instance Embedable Maybe Natural where 
+  embed = \case 
+    Just n -> n + 1
+    Nothing -> 0
+  {-# INLINE embed #-}
+
+instance Projectable Maybe Natural where
+  project = \case
+    0 -> Nothing
+    n -> Just (n - 1)
+  {-# INLINE project #-}
+
+instance Catamorphic Maybe Natural
+instance Anamorphic Maybe Natural
+
+
+-- | A `SemigroupF` functor is a simple fold fixpoint for an non-empty
+-- container.
+data SemigroupF b f 
+  = One b
+  | More b f
+  deriving (Functor, Foldable, Traversable, Generic)
+
+instance Bifunctor SemigroupF where
+  bimap f g = \case
+    More a b -> More (f a) (g b)
+    One b -> One (f b)
+
+instance Bifoldable SemigroupF where
+  bifoldMap f g = \case
+    More a b -> (f a) <> (g b)
+    One a -> (f a)
+
+instance Bitraversable SemigroupF where
+
+instance Projectable (SemigroupF b) (NonEmpty b) where project = project1
+instance Embedable (SemigroupF b) (NonEmpty b) where embed = embed1
+
+instance Projectable1 SemigroupF NonEmpty where
+  project1 (NonEmpty.uncons -> (a, x)) = 
+    maybe (One a) (More a) x
+  {-# INLINE project1 #-}
+
+instance Embedable1 SemigroupF NonEmpty where
+  embed1 = \case
+    One a -> a :| []
+    More a rest -> a NonEmpty.<| rest
+  {-# INLINE embed1 #-}
+
+instance Catamorphic (SemigroupF b) (NonEmpty b)
+instance Anamorphic (SemigroupF b) (NonEmpty b)
+instance Catamorphic1 SemigroupF NonEmpty 
+instance Anamorphic1 SemigroupF NonEmpty
+
+-- | A `MonoidF` functor is a simple fold fixpoint.
+data MonoidF b f 
+  = None
+  | Many b f
+  deriving (Functor, Foldable, Traversable, Generic)
+
+instance Bifunctor MonoidF where
+  bimap f g = \case
+    Many a b -> Many (f a) (g b)
+    None -> None
+
+instance Bifoldable MonoidF where
+  bifoldMap f g = \case
+    Many a b -> (f a) <> (g b)
+    None -> mempty
+
+instance Bitraversable MonoidF where
+
+instance Projectable1 MonoidF [] where
+  project1 = \case
+    [] -> None
+    a:rest -> Many a rest
+  {-# INLINE project1 #-}
+
+instance Projectable (MonoidF b) [b] where 
+  project = project1
+  {-# INLINE project #-}
+
+instance Embedable1 MonoidF [] where
+  embed1 = \case
+    None -> []
+    Many a rest -> a:rest
+  {-# INLINE embed1 #-}
+
+instance Embedable (MonoidF b) [b] where 
+  embed = embed1
+  {-# INLINE embed #-}
+
+instance Catamorphic (MonoidF b) [b] 
+instance Anamorphic (MonoidF b) [b] 
+instance Fixed (MonoidF b) [b] 
+
+-- This allows us to Embed items that are Embedable SemigroupF
+-- into MonoidF. 
+newtype IsNonEmpty a = 
+  IsNonEmpty { fromNonEmpty :: a }
+
+instance Embedable (MonoidF b) a => Embedable (SemigroupF b) (IsNonEmpty a) where
+  embed = \case
+    One  a   -> 
+      IsNonEmpty $ embed (Many a (embed None))
+    More a (IsNonEmpty r) -> 
+      IsNonEmpty $ embed (Many a r)
+
+-- | Convert any ListLike into MonoidF
+intoNonEmpty :: forall x a b. (Catamorphic (SemigroupF x) a, Embedable (MonoidF x) b) => a -> b
+intoNonEmpty = fromNonEmpty . hylo @(SemigroupF x) @a @(IsNonEmpty b) 
+
+-- | A Partition of a structure, In the split case every element on the 
+-- right side is above the element in the middle.
+data PartitionF a f 
+  = Split f a f 
+  | Leaf 
+  deriving (Functor, Foldable, Traversable, Generic)
 
 
 
